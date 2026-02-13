@@ -21,9 +21,10 @@ from enum import Enum
 
 class SeatType(Enum):
     """좌석 종류"""
-    GENERAL = "general"      # 일반실만
-    SPECIAL = "special"      # 특실만
-    ANY = "any"              # 둘 다 가능 (먼저 잡히는 것)
+
+    GENERAL = "general"  # 일반실만
+    SPECIAL = "special"  # 특실만
+    ANY = "any"  # 둘 다 가능 (먼저 잡히는 것)
 
 
 @dataclass
@@ -72,17 +73,22 @@ def load_search_configs() -> list[SearchConfig]:
 
     configs = []
     for item in data:
-        configs.append(SearchConfig(
-            dep_station=item["dep_station"],
-            arr_station=item["arr_station"],
-            dep_date=item["dep_date"],
-            dep_time=item["dep_time"],
-            train_type=train_type_map.get(item.get("train_type", "KTX"), TrainType.KTX),
-            time_start=item.get("time_start"),
-            time_end=item.get("time_end"),
-            seat_type=seat_type_map.get(item.get("seat_type", "any"), SeatType.ANY),
-        ))
+        configs.append(
+            SearchConfig(
+                dep_station=item["dep_station"],
+                arr_station=item["arr_station"],
+                dep_date=item["dep_date"],
+                dep_time=item["dep_time"],
+                train_type=train_type_map.get(
+                    item.get("train_type", "KTX"), TrainType.KTX
+                ),
+                time_start=item.get("time_start"),
+                time_end=item.get("time_end"),
+                seat_type=seat_type_map.get(item.get("seat_type", "any"), SeatType.ANY),
+            )
+        )
     return configs
+
 
 # 승객 정보
 PASSENGERS = [
@@ -204,7 +210,7 @@ def search_and_reserve(korail: Korail, config: SearchConfig) -> bool:
                 seat_type_name = {
                     SeatType.GENERAL: "일반실",
                     SeatType.SPECIAL: "특실",
-                    SeatType.ANY: "좌석"
+                    SeatType.ANY: "좌석",
                 }[config.seat_type]
                 log(f"{seat_type_name} 예약 가능! {train_info}")
 
@@ -222,7 +228,9 @@ def search_and_reserve(korail: Korail, config: SearchConfig) -> bool:
                     log("=" * 50)
 
                     # 텔레그램 알림
-                    send_telegram(f"<b>코레일 예약 성공! ({seat_type_name})</b>\n\n{reservation}")
+                    send_telegram(
+                        f"<b>코레일 예약 성공! ({seat_type_name})</b>\n\n{reservation}"
+                    )
 
                     return True
 
@@ -252,7 +260,7 @@ def main():
         seat_type_name = {
             SeatType.GENERAL: "일반실",
             SeatType.SPECIAL: "특실",
-            SeatType.ANY: "전체"
+            SeatType.ANY: "전체",
         }[config.seat_type]
         log(
             f"  [{i}] {config.dep_station}->{config.arr_station} "
