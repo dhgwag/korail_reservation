@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/opt/homebrew/bin/python3 -m pip install:*)",
+      "Bash(/opt/homebrew/bin/python3:*)",
+      "Bash(source:*)",
+      "Bash(pip install:*)",
+      "Bash(./venv/bin/python:*)",
+      "Bash(chmod:*)",
+      "Bash(pip show:*)"
+    ]
+  }
+}

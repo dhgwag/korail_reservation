@@ -19,6 +19,12 @@ from korail2 import NoResultsError, SoldOutError
 from enum import Enum
 
 
+class NeedReloginError(Exception):
+    """로그인 세션 만료 시 발생하는 예외"""
+
+    pass
+
+
 class SeatType(Enum):
     """좌석 종류"""
 
@@ -238,9 +244,14 @@ def search_and_reserve(korail: Korail, config: SearchConfig) -> bool:
                     log(f"좌석 매진: {train_info}")
                 except Exception as e:
                     log(f"예약 실패: {e}")
+                    # 로그인 만료 시 재로그인 필요 표시
+                    if "P058" in str(e) or "Need to Login" in str(e):
+                        raise NeedReloginError()
 
     except NoResultsError:
         pass
+    except NeedReloginError:
+        raise  # 재로그인 필요 예외는 상위로 전파
     except Exception as e:
         log(f"검색 오류: {e}")
 
@@ -272,13 +283,12 @@ def main():
 
     # 로그인
     log("로그인 중...")
-    try:
-        korail = Korail(KORAIL_ID, KORAIL_PW, auto_login=True)
-        log("로그인 성공!")
-        send_telegram("코레일 자동 예매 시작됨")
-    except Exception as e:
-        log(f"로그인 실패: {e}")
+    korail = Korail(KORAIL_ID, KORAIL_PW, auto_login=True)
+    if not korail.logined:
+        log("로그인 실패! ID/PW를 확인해주세요.")
         return
+    log("로그인 성공!")
+    send_telegram("코레일 자동 예매 시작됨")
 
     # 자동 예매 루프
     attempt = 0
@@ -316,9 +326,20 @@ def main():
 
             log(f"검색: {config.dep_station}->{config.arr_station} ({config.dep_date})")
 
-            if search_and_reserve(korail, config):
-                reserved_configs.add(i)
-                log(f"설정 [{i + 1}] 예약 완료!")
+            try:
+                if search_and_reserve(korail, config):
+                    reserved_configs.add(i)
+                    log(f"설정 [{i + 1}] 예약 완료!")
+            except NeedReloginError:
+                log("세션 만료 감지. 재로그인 중...")
+                if korail.login(KORAIL_ID, KORAIL_PW):
+                    last_refresh = datetime.now()
+                    log("재로그인 성공!")
+                else:
+                    log("재로그인 실패! 프로그램을 종료합니다.")
+                    send_telegram("재로그인 실패! 프로그램이 종료되었습니다.")
+                    return
+                break  # 현재 루프 중단하고 다음 시도에서 재검색
 
         log(f"{SEARCH_INTERVAL}초 후 재시도...")
         time.sleep(SEARCH_INTERVAL)
