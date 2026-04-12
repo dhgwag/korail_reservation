@@ -210,6 +210,7 @@ def search_and_reserve(korail: Korail, config: SearchConfig) -> bool:
 
         for train in preferred_trains:
             train_info = display_train_info(train)
+            print(train_info)
 
             # 원하는 좌석 타입이 예약 가능한지 확인
             if check_seat_available(train, config.seat_type):
