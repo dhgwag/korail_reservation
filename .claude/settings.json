@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(gh pr:*)",
+      "Bash(gh repo:*)"
+    ],
+    "additionalDirectories": [
+      "/private/tmp/korail2-patch/korail2"
+    ]
+  }
+}
