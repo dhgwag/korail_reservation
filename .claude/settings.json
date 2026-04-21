@@ -3,10 +3,15 @@
     "allow": [
       "WebSearch",
       "Bash(gh pr:*)",
-      "Bash(gh repo:*)"
+      "Bash(gh repo:*)",
+      "WebFetch(domain:securitypt.tistory.com)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)"
     ],
     "additionalDirectories": [
-      "/private/tmp/korail2-patch/korail2"
+      "/private/tmp/korail2-patch/korail2",
+      "/tmp"
     ]
   }
 }

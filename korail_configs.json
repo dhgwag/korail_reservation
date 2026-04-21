@@ -1,0 +1,12 @@
+[
+  {
+    "dep_station": "울산(통도사)",
+    "arr_station": "서울",
+    "dep_date": "20260428",
+    "dep_time": "090000",
+    "train_type": "KTX",
+    "time_start": "09",
+    "time_end": "10",
+    "seat_type": "general"
+  }
+]

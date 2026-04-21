@@ -1,0 +1,11 @@
+[
+  {
+    "dep_station": "수서",
+    "arr_station": "울산(통도사)",
+    "dep_date": "20260430",
+    "dep_time": "050000",
+    "time_start": "05",
+    "time_end": "07",
+    "seat_type": "general"
+  }
+]

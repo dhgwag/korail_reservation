@@ -16,7 +16,7 @@ if [ -f "$KORAIL2_PATH" ]; then
 fi
 
 # 더블클릭 실행 파일 권한 설정
-chmod +x "$(dirname "$0")/코레일예매.command" 2>/dev/null
+chmod +x "$(dirname "$0")/기차표예매.command" 2>/dev/null
 
 echo "설치 완료!"
-echo "실행: 코레일예매.command 더블클릭 또는 python web_ui.py"
+echo "실행: 기차표예매.command 더블클릭 또는 python web_ui.py"

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-코레일 자동 예매 스크립트 (고급 버전)
+SRT 자동 예매 스크립트
 - 다중 열차/시간대 검색
 - 텔레그램 알림 기능
 - 예매 성공 시 알림
@@ -13,10 +13,10 @@ import requests
 from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional
-from korail2 import Korail, AdultPassenger, ChildPassenger, SeniorPassenger
-from korail2 import ReserveOption, TrainType
-from korail2 import NoResultsError, SoldOutError
 from enum import Enum
+
+from SRT import SRT, Adult, SeatType as SRTSeatTypeLib
+from SRT import SRTError, SRTLoginError, SRTResponseError, SRTNotLoggedInError
 
 
 class NeedReloginError(Exception):
@@ -41,7 +41,6 @@ class SearchConfig:
     arr_station: str  # 도착역
     dep_date: str  # 출발 날짜 (YYYYMMDD)
     dep_time: str  # 출발 시간 (HHMMSS)
-    train_type: str = TrainType.KTX
     time_start: Optional[str] = None  # 선호 시작 시간 (HH)
     time_end: Optional[str] = None  # 선호 종료 시간 (HH)
     seat_type: SeatType = SeatType.ANY  # 좌석 종류 (특실/일반실/둘다)
@@ -49,16 +48,28 @@ class SearchConfig:
 
 # ============ 설정 ============
 
+def _normalize_srt_id(raw: str) -> str:
+    """하이픈 없는 휴대폰 번호를 SRT 라이브러리가 인식하도록 포맷팅.
+
+    SRT 라이브러리의 PHONE_NUMBER_REGEX는 하이픈을 필수로 요구하므로,
+    `01012345678` 같은 입력이 들어오면 회원번호로 오분류되어 로그인이 실패한다.
+    """
+    raw = (raw or "").strip()
+    if raw.isdigit() and len(raw) == 11 and raw.startswith("01"):
+        return f"{raw[0:3]}-{raw[3:7]}-{raw[7:11]}"
+    return raw
+
+
 # 로그인 정보 (환경 변수 또는 직접 입력)
-KORAIL_ID = os.environ.get("KORAIL_ID", "YOUR_ID")
-KORAIL_PW = os.environ.get("KORAIL_PW", "YOUR_PASSWORD")
+SRT_ID = _normalize_srt_id(os.environ.get("SRT_ID", "YOUR_ID"))
+SRT_PW = os.environ.get("SRT_PW", "YOUR_PASSWORD")
 
 # 텔레그램 알림 설정 (선택사항)
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # 검색 설정 파일 경로
-SEARCH_CONFIGS_FILE = os.path.join(os.path.dirname(__file__), "search_configs.json")
+SEARCH_CONFIGS_FILE = os.path.join(os.path.dirname(__file__), "srt_configs.json")
 
 
 def load_search_configs() -> list[SearchConfig]:
@@ -66,11 +77,6 @@ def load_search_configs() -> list[SearchConfig]:
     with open(SEARCH_CONFIGS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    train_type_map = {
-        "KTX": TrainType.KTX,
-        "MUGUNGHWA": TrainType.MUGUNGHWA,
-        "ALL": TrainType.ALL,
-    }
     seat_type_map = {
         "general": SeatType.GENERAL,
         "special": SeatType.SPECIAL,
@@ -85,9 +91,6 @@ def load_search_configs() -> list[SearchConfig]:
                 arr_station=item["arr_station"],
                 dep_date=item["dep_date"],
                 dep_time=item["dep_time"],
-                train_type=train_type_map.get(
-                    item.get("train_type", "KTX"), TrainType.KTX
-                ),
                 time_start=item.get("time_start"),
                 time_end=item.get("time_end"),
                 seat_type=seat_type_map.get(item.get("seat_type", "any"), SeatType.ANY),
@@ -98,11 +101,8 @@ def load_search_configs() -> list[SearchConfig]:
 
 # 승객 정보
 PASSENGERS = [
-    AdultPassenger(1),
+    Adult(1),
 ]
-
-# 좌석 옵션
-RESERVE_OPTION = ReserveOption.GENERAL_FIRST
 
 # 검색 간격 (초)
 SEARCH_INTERVAL = 1
@@ -147,14 +147,8 @@ def is_preferred_time(train, config: SearchConfig) -> bool:
 def get_seat_status(train) -> str:
     """좌석 상태 문자열 반환"""
     status = []
-    if train.has_special_seat():
-        status.append("특실O")
-    else:
-        status.append("특실X")
-    if train.has_general_seat():
-        status.append("일반실O")
-    else:
-        status.append("일반실X")
+    status.append("특실O" if train.special_seat_available() else "특실X")
+    status.append("일반실O" if train.general_seat_available() else "일반실X")
     return ", ".join(status)
 
 
@@ -162,8 +156,9 @@ def display_train_info(train) -> str:
     """열차 정보 문자열 반환"""
     seat_status = get_seat_status(train)
     return (
-        f"[{train.train_type_name}] {train.dep_date[4:6]}월 {train.dep_date[6:]}일, "
-        f"{train.dep_name}~{train.arr_name}"
+        f"[{train.train_name} {train.train_number}] "
+        f"{train.dep_date[4:6]}월 {train.dep_date[6:]}일, "
+        f"{train.dep_station_name}~{train.arr_station_name}"
         f"({train.dep_time[:2]}:{train.dep_time[2:4]}~{train.arr_time[:2]}:{train.arr_time[2:4]}) "
         f"[{seat_status}]"
     )
@@ -172,34 +167,32 @@ def display_train_info(train) -> str:
 def check_seat_available(train, seat_type: SeatType) -> bool:
     """원하는 좌석 타입이 예약 가능한지 확인"""
     if seat_type == SeatType.GENERAL:
-        return train.has_general_seat()
+        return train.general_seat_available()
     elif seat_type == SeatType.SPECIAL:
-        return train.has_special_seat()
+        return train.special_seat_available()
     else:  # SeatType.ANY
-        return train.has_general_seat() or train.has_special_seat()
+        return train.seat_available()
 
 
-def get_reserve_option(seat_type: SeatType) -> str:
-    """좌석 타입에 맞는 ReserveOption 반환"""
+def get_reserve_seat_option(seat_type: SeatType):
+    """좌석 타입에 맞는 SRT SeatType 반환"""
     if seat_type == SeatType.GENERAL:
-        return ReserveOption.GENERAL_ONLY
+        return SRTSeatTypeLib.GENERAL_ONLY
     elif seat_type == SeatType.SPECIAL:
-        return ReserveOption.SPECIAL_ONLY
+        return SRTSeatTypeLib.SPECIAL_ONLY
     else:  # SeatType.ANY
-        return RESERVE_OPTION  # 전역 설정 사용
+        return SRTSeatTypeLib.GENERAL_FIRST
 
 
-def search_and_reserve(korail: Korail, config: SearchConfig) -> bool:
+def search_and_reserve(srt: SRT, config: SearchConfig) -> bool:
     """열차 검색 및 예약 시도"""
     try:
-        trains = korail.search_train(
+        trains = srt.search_train(
             dep=config.dep_station,
             arr=config.arr_station,
             date=config.dep_date,
             time=config.dep_time,
-            train_type=config.train_type,
-            passengers=PASSENGERS,
-            include_no_seats=True,
+            available_only=False,  # 매진 포함 전체 조회
         )
 
         if not trains:
@@ -222,11 +215,10 @@ def search_and_reserve(korail: Korail, config: SearchConfig) -> bool:
                 log(f"{seat_type_name} 예약 가능! {train_info}")
 
                 try:
-                    reserve_option = get_reserve_option(config.seat_type)
-                    reservation = korail.reserve(
+                    reservation = srt.reserve(
                         train,
                         passengers=PASSENGERS,
-                        option=reserve_option,
+                        special_seat=get_reserve_seat_option(config.seat_type),
                     )
 
                     success_msg = f"예약 성공! ({seat_type_name})\n{reservation}"
@@ -234,25 +226,31 @@ def search_and_reserve(korail: Korail, config: SearchConfig) -> bool:
                     log(success_msg)
                     log("=" * 50)
 
-                    # 텔레그램 알림
                     send_telegram(
-                        f"<b>코레일 예약 성공! ({seat_type_name})</b>\n\n{reservation}"
+                        f"<b>SRT 예약 성공! ({seat_type_name})</b>\n\n{reservation}"
                     )
 
                     return True
 
-                except SoldOutError:
-                    log(f"좌석 매진: {train_info}")
+                except SRTResponseError as e:
+                    msg = str(e)
+                    log(f"예약 실패: {msg}")
+                    if "로그인" in msg or "Not logged in" in msg:
+                        raise NeedReloginError()
+                except SRTNotLoggedInError:
+                    raise NeedReloginError()
                 except Exception as e:
                     log(f"예약 실패: {e}")
-                    # 로그인 만료 시 재로그인 필요 표시
-                    if "P058" in str(e) or "Need to Login" in str(e):
-                        raise NeedReloginError()
 
-    except NoResultsError:
-        pass
+    except SRTNotLoggedInError:
+        raise NeedReloginError()
     except NeedReloginError:
-        raise  # 재로그인 필요 예외는 상위로 전파
+        raise
+    except SRTResponseError as e:
+        msg = str(e)
+        if "로그인" in msg or "Not logged in" in msg:
+            raise NeedReloginError()
+        log(f"검색 오류: {e}")
     except Exception as e:
         log(f"검색 오류: {e}")
 
@@ -262,7 +260,7 @@ def search_and_reserve(korail: Korail, config: SearchConfig) -> bool:
 def main():
     """메인 함수"""
     log("=" * 50)
-    log("코레일 자동 예매 (고급) 시작")
+    log("SRT 자동 예매 시작")
 
     # JSON에서 검색 설정 로드
     search_configs = load_search_configs()
@@ -284,12 +282,16 @@ def main():
 
     # 로그인
     log("로그인 중...")
-    korail = Korail(KORAIL_ID, KORAIL_PW, auto_login=True)
-    if not korail.logined:
+    try:
+        srt = SRT(SRT_ID, SRT_PW, auto_login=True)
+    except SRTLoginError as e:
+        log(f"로그인 실패: {e}")
+        return
+    if not srt.is_login:
         log("로그인 실패! ID/PW를 확인해주세요.")
         return
     log("로그인 성공!")
-    send_telegram("코레일 자동 예매 시작됨")
+    send_telegram("SRT 자동 예매 시작됨")
 
     # 자동 예매 루프
     attempt = 0
@@ -312,7 +314,7 @@ def main():
         if (datetime.now() - last_refresh).seconds > SESSION_REFRESH_INTERVAL * 60:
             log("세션 갱신 중...")
             try:
-                korail.login(KORAIL_ID, KORAIL_PW)
+                srt.login(SRT_ID, SRT_PW)
                 last_refresh = datetime.now()
                 log("세션 갱신 완료")
             except Exception as e:
@@ -328,16 +330,17 @@ def main():
             log(f"검색: {config.dep_station}->{config.arr_station} ({config.dep_date})")
 
             try:
-                if search_and_reserve(korail, config):
+                if search_and_reserve(srt, config):
                     reserved_configs.add(i)
                     log(f"설정 [{i + 1}] 예약 완료!")
             except NeedReloginError:
                 log("세션 만료 감지. 재로그인 중...")
-                if korail.login(KORAIL_ID, KORAIL_PW):
+                try:
+                    srt.login(SRT_ID, SRT_PW)
                     last_refresh = datetime.now()
                     log("재로그인 성공!")
-                else:
-                    log("재로그인 실패! 프로그램을 종료합니다.")
+                except Exception as e:
+                    log(f"재로그인 실패: {e}")
                     send_telegram("재로그인 실패! 프로그램이 종료되었습니다.")
                     return
                 break  # 현재 루프 중단하고 다음 시도에서 재검색
@@ -346,7 +349,7 @@ def main():
         time.sleep(SEARCH_INTERVAL)
 
     log("프로그램 종료")
-    log("코레일 앱 또는 홈페이지에서 결제를 완료해주세요.")
+    log("SRT 앱 또는 홈페이지에서 결제를 완료해주세요.")
 
 
 if __name__ == "__main__":

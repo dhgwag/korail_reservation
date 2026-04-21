@@ -1,3 +1,4 @@
 korail2 @ git+https://github.com/dhgwag/korail2.git@fix/anti-bot-bypass
+SRTrain @ git+https://github.com/dhgwag/SRT.git@master
 requests
 flask

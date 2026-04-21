@@ -7,7 +7,14 @@
       "Bash(pip install:*)",
       "Bash(./venv/bin/python:*)",
       "Bash(chmod:*)",
-      "Bash(pip show:*)"
+      "Bash(pip show:*)",
+      "Bash(python3 -c \"import sys; sys.path.insert\\(0, '/Users/dhgwag/Development/korail26/venv/lib/python3.13/site-packages'\\); from korail2 import Korail; print\\(Korail.__doc__[:200]\\)\")",
+      "Bash(gh auth *)",
+      "Bash(gh api *)",
+      "Bash(git mv *)",
+      "Bash(python3 -c 'import SRT')",
+      "Bash(python3 -c ' *)",
+      "Bash(git check-ignore *)"
     ]
   }
 }
