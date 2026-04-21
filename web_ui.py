@@ -715,7 +715,8 @@ checkStatus();
 if __name__ == "__main__":
     import webbrowser
 
-    port = 5000
+    # macOS ControlCenter(AirPlay 수신기)가 5000을 쓰므로 기본 5001 사용
+    port = int(os.environ.get("WEB_UI_PORT", "5001"))
     threading.Timer(1.0, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
     print(f"웹 UI 서버 시작: http://127.0.0.1:{port}")
     print("종료하려면 Ctrl+C를 누르세요.")

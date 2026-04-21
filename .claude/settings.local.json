@@ -14,7 +14,15 @@
       "Bash(git mv *)",
       "Bash(python3 -c 'import SRT')",
       "Bash(python3 -c ' *)",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(git commit -m ' *)",
+      "Bash(lsof -nP -iTCP:5000 -sTCP:LISTEN)",
+      "Bash(curl -sSI http://127.0.0.1:5000/)",
+      "Bash(kill 24903)",
+      "Bash(lsof -nP -iTCP:5001 -sTCP:LISTEN)",
+      "Bash(bash -n setup.sh)",
+      "Bash(bash -n run.sh)",
+      "Bash(bash -n 기차표예매.command)"
     ]
   }
 }
