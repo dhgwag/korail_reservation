@@ -54,7 +54,23 @@ class ServiceRunner:
         self.lock = threading.Lock()
         self.process: subprocess.Popen | None = None
         self.log_buffer: deque[str] = deque(maxlen=5000)
+        self.log_offset = 0  # deque에서 밀려나 사라진 항목 수
         self.log_event = threading.Event()
+
+    def append_log(self, line: str):
+        if len(self.log_buffer) == self.log_buffer.maxlen:
+            self.log_offset += 1
+        self.log_buffer.append(line)
+        self.log_event.set()
+
+    def clear_log(self):
+        self.log_buffer.clear()
+        self.log_offset = 0
+
+    @property
+    def log_end(self) -> int:
+        """지금까지 누적된 총 로그 라인 수(글로벌 인덱스의 끝)."""
+        return self.log_offset + len(self.log_buffer)
 
 
 runners: dict[str, ServiceRunner] = {
@@ -109,14 +125,12 @@ def stream_output(runner: ServiceRunner, proc: subprocess.Popen):
         for line in iter(proc.stdout.readline, ""):
             if not line:
                 break
-            runner.log_buffer.append(line.rstrip("\n"))
-            runner.log_event.set()
+            runner.append_log(line.rstrip("\n"))
         proc.wait()
     finally:
         with runner.lock:
             runner.process = None
-        runner.log_buffer.append("[시스템] 예매 스크립트가 종료되었습니다.")
-        runner.log_event.set()
+        runner.append_log("[시스템] 예매 스크립트가 종료되었습니다.")
 
 
 # ============ API 라우트 ============
@@ -177,8 +191,8 @@ def run_service(service: str):
         venv_python = BASE_DIR / "venv" / "bin" / "python"
         python_cmd = str(venv_python) if venv_python.exists() else sys.executable
 
-        runner.log_buffer.clear()
-        runner.log_buffer.append(
+        runner.clear_log()
+        runner.append_log(
             f"[시스템] {service.upper()} 예매 스크립트를 시작합니다..."
         )
 
@@ -230,17 +244,19 @@ def stream_service_log(service: str):
         return jsonify({"error": "unknown service"}), 404
 
     def generate():
-        sent = 0
+        sent = 0  # 글로벌 인덱스: 다음에 보낼 라인의 전역 번호
         while True:
-            buf = list(runner.log_buffer)
-            if sent < len(buf):
-                for line in buf[sent:]:
+            end = runner.log_end
+            if sent < end:
+                # 버퍼에서 잘려나간 구간은 건너뛴다
+                start_in_buf = max(sent, runner.log_offset) - runner.log_offset
+                for line in list(runner.log_buffer)[start_in_buf:]:
                     yield f"data: {line}\n\n"
-                sent = len(buf)
+                sent = runner.log_end
 
             with runner.lock:
                 is_running = runner.process is not None
-            if not is_running and sent >= len(runner.log_buffer):
+            if not is_running and sent >= runner.log_end:
                 yield "data: [END]\n\n"
                 break
 
